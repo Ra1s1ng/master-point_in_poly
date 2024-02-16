@@ -9,13 +9,16 @@ import s2, s2sphere
 S2_RES = 22
 
 
-def load_data(path: str):
+def load_data(path: str, amount: int):
     data = pd.read_csv(filepath_or_buffer=path, dtype={'location_context': 'string', 'carrier_name': 'string'})
-    data["lat"] = data["geo_location"].str.extract(r'latitude=(.*?),')
-    data["lon"] = data["geo_location"].str.extract(r'longitude=(.*?)}')
+    data = data.head(amount)
+    data["lat"] = pd.to_numeric(data["geo_location"].str.extract(r'latitude=(.*?),', expand=False), errors='coerce')
+    data["lon"] = pd.to_numeric(data["geo_location"].str.extract(r'longitude=(.*?)}', expand=False), errors='coerce')
+    # data["lat"] = data["lat"].apply(lambda x: f"{x:.4f}")
+    # data["lon"] = data["lon"].apply(lambda x: f"{x:.4f}")
     data["h3_index_str"] = data.apply(lambda row: h3.h3_to_string(row["h3_index"]), axis=1)
     data["s2_object"] = data.apply(lambda row: s2sphere.CellId(row["s2_cell_id"]), axis=1)
-    data["h3_manual_res_12"] = data.apply(lambda row: h3.geo_to_h3(lat=float(row["lat"]), lng=float(row["lon"]), resolution=12), axis=1)
+    data["h3_manual_res_12"] = data.apply(lambda row: h3.geo_to_h3(lat=row["lat"], lng=row["lon"], resolution=12), axis=1)
     return data
 
 
@@ -72,53 +75,46 @@ def prepare_cells_and_points(df: pd.DataFrame, s2_res: int, h3_res: int):
     return df
 
 
-def coord_matching(df: pd.DataFrame, amount: int, coord_poly: dict):
-    point_in_polygon = {}
-    matches = []
+def coord_matching(df: pd.DataFrame, coord_poly: dict):
+    df["matching_polygon"] = pd.Series(dtype=str)
 
-    for row in df.head(amount).itertuples():
-        device_id = row.device_id
-
-        matched_polygon = None
+    def find_matching_polygon(row):
         for polygon_key, polygon in coord_poly.items():
-            if row.points.within(polygon):
-                matched_polygon = polygon_key
-                break
-        if matched_polygon is not None:
-            point_in_polygon[device_id] = matched_polygon
+            if row[f"points"].within(polygon):
+                return polygon_key
+        return None
 
-    for point in df["points"].head(amount):
-        for key in coord_poly:
-            if point.within(coord_poly[key]):
-                matches.append(key)
-                break
-
-    return point_in_polygon, matches
+    df["matching_polygon"] = df.apply(find_matching_polygon, axis=1)
+    matching_df = df[df["matching_polygon"].notna()]
+    return matching_df
 
 
-def h3_matching(df: pd.DataFrame, amount: int, h3_poly: dict):
-    h3_matches = {}
-    matches = df["h3_parent_to_maid"].head(amount).isin(h3_poly.values())
+def h3_matching(df: pd.DataFrame, h3_poly: dict):
+    df["matching_h3_cell"] = pd.Series(dtype=str)
 
-    for index, row in df[matches].iterrows():
-        device_id = row["device_id"]
-        for polygon_key, h3_values in h3_poly.items():
-            if row["h3_parent_to_maid"] in h3_values:
-                h3_matches[device_id] = polygon_key
-                break
+    def find_h3_polygon(row):
+        for polygon_key, poly_h3_values in h3_poly.items():
+            if row["h3_parent_to_maid"] in poly_h3_values:
+                return polygon_key
+        return None
 
-    return h3_matches
+    df["matching_h3_cell"] = df.apply(find_h3_polygon, axis=1)
+    matching_df = df[df["matching_h3_cell"].notna()]
+    return matching_df
 
 
-def s2_matching(df: pd.DataFrame, amount: int, s2_poly: dict):
-    s2_matches = []
+def s2_matching(df: pd.DataFrame, s2_poly: dict):
+    df["matching_s2_cell"] = pd.Series(dtype=str)
 
-    for point in df["s2_parent_to_maid"].head(amount):
-        for key in s2_poly:
-            if point in s2_poly[key]:
-                s2_matches.append(key)
-                break
-    return s2_matches
+    def find_s2_polygon(row):
+        for polygon_key, poly_s2_values in s2_poly.items():
+            if row["s2_parent_to_maid"] in poly_s2_values:
+                return polygon_key
+        return None
+
+    df["matching_h3_cell"] = df.apply(find_s2_polygon, axis=1)
+    matching_df = df[df["matching_s2_cell"].notna()]
+    return matching_df
 
 
 
