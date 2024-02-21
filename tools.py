@@ -141,13 +141,13 @@ def merge_dfs(df_coord_match_4, df_coord_match_5, df_h3_13_match, df_h3_14_match
 
 def get_confusion_matrix(df):
     def map_classification(row, method):
-        if ~pd.isna(row["matching_polygon_4"]) & ~pd.isna(row[method]):
+        if row["matching_polygon_4"] == row[method]:
             return "TP"
-        elif pd.isna(row["matching_polygon_4"]) & ~pd.isna(row[method]):
+        elif pd.isna(row["matching_polygon_4"]) and not pd.isna(row[method]):
             return "FP"
-        elif pd.isna(row["matching_polygon_4"]) & pd.isna(row[method]):
+        elif pd.isna(row["matching_polygon_4"]) and pd.isna(row[method]):
             return "TN"
-        elif ~pd.isna(row["matching_polygon_4"]) & pd.isna(row[method]):
+        elif not pd.isna(row["matching_polygon_4"]) and pd.isna(row[method]):
             return "FN"
 
     df["coord_5_conf"] = df.apply(

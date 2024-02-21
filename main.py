@@ -3,7 +3,7 @@ from measure import measure_match_coords_4, measure_match_coords_5, measure_matc
 from tools import load_data, define_polygons_h3, define_polygons_shapely, \
     define_polygons_s2, merge_dfs, get_confusion_matrix, calculate_metrics
 
-N_AMOUNT = 10000
+N_AMOUNT = 1000000
 GEOMETRY_FILE = "./data/polygon_100_ber.geojson"
 MAID_FILE = "./data/athena_output_1m_berlin.csv"
 
