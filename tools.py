@@ -13,7 +13,7 @@ def load_data(path: str, amount: int):
         return parent_cell_id.to_token()
 
     data = pd.read_csv(filepath_or_buffer=path, dtype={'location_context': 'string', 'carrier_name': 'string'})
-    data = data.head(amount)
+    data = data.sample(n=amount, random_state=14)
     data["lat"] = pd.to_numeric(data["geo_location"].str.extract(r'latitude=(.*?),', expand=False), errors='coerce')
     data["lon"] = pd.to_numeric(data["geo_location"].str.extract(r'longitude=(.*?)}', expand=False), errors='coerce')
     data["lat_4"] = data["lat"].apply(lambda x: f"{x:.4f}")
@@ -112,70 +112,64 @@ def s2_matching(df: pd.DataFrame, s2_poly: dict, res):
     return matching_df
 
 
-def merge_dfs(df_coord_match_4, df_coord_match_5, df_h3_13_match, df_h3_14_match, df_s2_21_match, df_s2_22_match):
-    columns_needed = ["device_id",
-                      "matching_polygon_4",
-                      "matching_polygon_5",
-                      "matching_h3_13_cell",
-                      "matching_h3_14_cell",
-                      "matching_s2_21_cell",
-                      "matching_s2_22_cell"]
+def merge_dfs(df1, df2, df3=pd.DataFrame()):
 
-    df_coord_match_4 = df_coord_match_4[[col for col in df_coord_match_4.columns if col in columns_needed]]
-    df_coord_match_5 = df_coord_match_5[[col for col in df_coord_match_5.columns if col in columns_needed]]
-    df_h3_13_match = df_h3_13_match[[col for col in df_h3_13_match.columns if col in columns_needed]]
-    df_h3_14_match = df_h3_14_match[[col for col in df_h3_14_match.columns if col in columns_needed]]
-    df_s2_21_match = df_s2_21_match[[col for col in df_s2_21_match.columns if col in columns_needed]]
-    df_s2_22_match = df_s2_22_match[[col for col in df_s2_22_match.columns if col in columns_needed]]
+    def intersection(df):
+        method_columns = ["device_id",
+                          "matching_polygon_4",
+                          "matching_polygon_5",
+                          "matching_h3_13_cell",
+                          "matching_h3_14_cell",
+                          "matching_s2_21_cell",
+                          "matching_s2_22_cell"]
 
-    merge_coord = pd.merge(df_coord_match_4, df_coord_match_5, on="device_id", how="outer")
-    merge_h3 = pd.merge(df_h3_13_match, df_h3_14_match, on="device_id", how="outer")
-    merge_s2 = pd.merge(df_s2_21_match, df_s2_22_match, on="device_id", how="outer")
+        columns = df.columns.tolist()
+        common_columns = [value for value in columns if value in method_columns]
+        return common_columns
 
-    merge_1 = pd.merge(merge_coord, merge_h3, on="device_id", how="outer")
-    merge_all = pd.merge(merge_1, merge_s2, on="device_id", how="outer")
-    merge_all.reset_index(inplace=True)
-    merged_df = merge_all.filter(columns_needed)
+    df1 = df1[intersection(df1)]
+    df2 = df2[intersection(df2)]
+    if not df3.empty:
+        df3 = df3[intersection(df3)]
+
+    if df3.empty:
+        merge_1 = df2
+    else:
+        merge_1 = pd.merge(df2, df3, on="device_id", how="outer")
+
+    merged_df = pd.merge(df1, merge_1, on="device_id", how="outer")
+    # merged_df = merged_df[[col for col in df1.columns if col in method_columns]]
     return merged_df
 
 
 def get_confusion_matrix(df):
     def map_classification(row, method):
-        if row["matching_polygon_4"] == row[method]:
+        if row["matching_polygon_5"] == row[method]:
             return "TP"
-        elif pd.isna(row["matching_polygon_4"]) and not pd.isna(row[method]):
+        elif pd.isna(row["matching_polygon_5"]) and not pd.isna(row[method]):
             return "FP"
-        elif pd.isna(row["matching_polygon_4"]) and pd.isna(row[method]):
+        elif pd.isna(row["matching_polygon_5"]) and pd.isna(row[method]):
             return "TN"
-        elif not pd.isna(row["matching_polygon_4"]) and pd.isna(row[method]):
+        elif not pd.isna(row["matching_polygon_5"]) and pd.isna(row[method]):
             return "FN"
 
-    df["coord_5_conf"] = df.apply(
-        lambda row: map_classification(row=row, method="matching_polygon_5"),
-        axis=1)
-    df["H3_13_conf"] = df.apply(
-        lambda row: map_classification(row=row, method="matching_h3_13_cell"),
-        axis=1)
-    df["H3_14_conf"] = df.apply(
-        lambda row: map_classification(row=row, method="matching_h3_14_cell"),
-        axis=1)
-    df["S2_21_conf"] = df.apply(
-        lambda row: map_classification(row=row, method="matching_s2_21_cell"),
-        axis=1)
-    df["S2_22_conf"] = df.apply(
-        lambda row: map_classification(row=row, method="matching_s2_22_cell"),
-        axis=1)
+    columns = [col for col in df.columns if col != 'device_id']
+
+    for column in columns:
+        df[f"conf_{column}"] = df.apply(
+            lambda row: map_classification(row=row, method=f"{column}"),
+            axis=1)
     return df
 
 
-def calculate_metrics(df):
-    method_columns = ["coord_5_conf", "H3_13_conf", "H3_14_conf", "S2_21_conf", "S2_22_conf"]
+def calculate_metrics(df, n_amount):
+    method_columns = [col for col in df.columns if col.startswith("conf_")]
     results = {}
 
     for method in method_columns:
         true_positives = (df[f"{method}"] == "TP").sum()
         false_positives = (df[f"{method}"] == "FP").sum()
-        true_negatives = (df[f"{method}"] == "TN").sum()
+        true_negatives = (df[f"{method}"] == "TN").sum() + (n_amount - len(df))
         # + all device_ids that are dropped from the original df.head(amount) to this df
         false_negatives = (df[f"{method}"] == "FN").sum()
 
@@ -188,7 +182,11 @@ def calculate_metrics(df):
             "precision": precision,
             "recall": recall,
             "f1": f1,
-            "jaccard_index": jaccard_index
+            "jaccard_index": jaccard_index,
+            # "TP": true_positives,
+            # "FP": false_positives,
+            # "TN": true_negatives,
+            # "FN": false_negatives
         }
 
     return pd.DataFrame(results).transpose()
