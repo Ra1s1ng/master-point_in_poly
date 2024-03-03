@@ -13,6 +13,7 @@ def load_data(path: str, amount: int):
         return parent_cell_id.to_token()
 
     data = pd.read_csv(filepath_or_buffer=path, dtype={'location_context': 'string', 'carrier_name': 'string'})
+    data = data.drop_duplicates(subset="device_id")
     data = data.sample(n=amount, random_state=14)
     data["lat"] = pd.to_numeric(data["geo_location"].str.extract(r'latitude=(.*?),', expand=False), errors='coerce')
     data["lon"] = pd.to_numeric(data["geo_location"].str.extract(r'longitude=(.*?)}', expand=False), errors='coerce')
@@ -183,10 +184,9 @@ def calculate_metrics(df, n_amount):
             "recall": recall,
             "f1": f1,
             "jaccard_index": jaccard_index,
-            # "TP": true_positives,
-            # "FP": false_positives,
-            # "TN": true_negatives,
-            # "FN": false_negatives
+            "TP": true_positives,
+            "FP": false_positives,
+            "FN": false_negatives
         }
 
     return pd.DataFrame(results).transpose()

@@ -3,10 +3,10 @@ from measure import measure_match
 from tools import load_data, define_polygons_h3, define_polygons_shapely, \
     define_polygons_s2, merge_dfs, get_confusion_matrix, calculate_metrics
 
-N_AMOUNT = 10000
+N_AMOUNT = 1000000
 POLY_AMOUNT = 10
 GEOMETRY_FILE = "./data/polygon_100_ber.geojson"
-MAID_FILE = "./data/athena_output_1m_berlin.csv"
+MAID_FILE = "./data/athena_output_1m_ber.csv"
 
 df = load_data(MAID_FILE, amount=N_AMOUNT)
 gdf_poly = gpd.read_file(GEOMETRY_FILE).sample(n=POLY_AMOUNT, random_state=14)
